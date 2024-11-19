@@ -305,10 +305,12 @@ void print_vehicle(FILE *pointer_vehicle, char vehicle_id[8])
 {	
 	type_vehicle vehicle;
 	
-	fseek(pointer_vehicle, find_vehicle_by_id(pointer_vehicle, vehicle_id), SEEK_SET);
-	fread(&vehicle, sizeof(type_vehicle), 1, pointer_vehicle);
+	int pos_vehicle = find_vehicle_by_id(pointer_vehicle, vehicle_id);
 	
-	printf("Placa:%s\nModelo:%s\nAno de fabricação:%s\n", vehicle.vehicle_plate, vehicle.vehicle_model, vehicle.fabrication_year);	
+	fseek(pointer_vehicle, pos_vehicle, SEEK_SET);
+	fread(&vehicle, sizeof(type_vehicle), 1, pointer_vehicle);
+
+	printf("Placa:%s\nModelo:%s\nAno de fabricação:%d\n", vehicle.vehicle_plate, vehicle.vehicle_model, vehicle.fabrication_year);	
 }
 
 void print_loan(FILE *pointer_loan, int loan_id)
@@ -318,7 +320,27 @@ void print_loan(FILE *pointer_loan, int loan_id)
 	fseek(pointer_loan, find_loan_by_id(pointer_loan, loan_id), SEEK_SET);
 	fread(&loan, sizeof(type_loan), 1, pointer_loan);
 	
-	printf("Id do empréstimo: \nCPF do cliente: %s\nData do empréstimo: %d/%d/%d\nData de devolução: %d/%d/%d\nData em que foi devolvido%d/%d/%d\n", loan.loan_id, loan.client_id, loan.loan_date.day, loan.loan_date.month, loan.loan_date.year, loan.return_date.day, loan.return_date.month, loan.return_date.year, loan.returned_date.day, loan.returned_date.month, loan.returned_date.year);	
+	printf("Id do empréstimo: %d\nCPF do cliente: %s\nData do empréstimo: %d/%d/%d\nData de devolução: %d/%d/%d\nData em que foi devolvido%d/%d/%d\n", loan.loan_id, loan.client_id, loan.loan_date.day, loan.loan_date.month, loan.loan_date.year, loan.return_date.day, loan.return_date.month, loan.return_date.year, loan.returned_date.day, loan.returned_date.month, loan.returned_date.year);	
+}
+
+void print_relation(FILE *pointer_relation_vehicle_rental, char vehicle_id[8])
+{
+	FILE *pointer_rental = fopen(dir_rental, "rb");
+	
+	type_relation_vehicle_rental relation_vehicle_rental;
+	type_rental rental;
+	
+	
+		
+	fseek(pointer_relation_vehicle_rental, find_relation_by_vehicle(pointer_relation_vehicle_rental, vehicle_id), SEEK_SET);
+	fread(&relation_vehicle_rental, sizeof(type_relation_vehicle_rental), 1, pointer_relation_vehicle_rental);
+	
+	fseek(pointer_rental, find_rental_by_id(pointer_rental, relation_vehicle_rental.rental_id), SEEK_SET);
+	fread(&rental, sizeof(type_rental), 1, pointer_rental);
+	
+	printf("Id da locadora: %d\nNome da locadora: %s\nPlaca do veículo:%s\n", relation_vehicle_rental.rental_id, rental.rental_name, relation_vehicle_rental.vehicle_id);
+	
+	fclose(pointer_rental);
 }
 
 
@@ -526,7 +548,6 @@ void create_relation_vehicle_rental()
 		gets(vehicle_id);
 	}
 	
-	
 	fclose(pointer_relation_vehicle_rental);
 	fclose(pointer_vehicle);
 
@@ -545,11 +566,24 @@ void aux_logic_delete_loan_by_id(FILE *pointer_loan, int loan_id)
 
 }
 
+void aux_logic_delete_relation_by_vehicle(FILE *pointer_relation_vehicle_rental, char vehicle_id[8])
+{
+	type_relation_vehicle_rental relation_vehicle_rental;
+	
+	fseek(pointer_relation_vehicle_rental, find_relation_by_vehicle(pointer_relation_vehicle_rental, vehicle_id), SEEK_SET);
+	fread(&relation_vehicle_rental, sizeof(type_relation_vehicle_rental), 1, pointer_relation_vehicle_rental);
+	relation_vehicle_rental.deleted = 'T';
+	
+	fseek(pointer_relation_vehicle_rental, -sizeof(type_relation_vehicle_rental), SEEK_CUR);
+	fwrite(&relation_vehicle_rental, sizeof(type_relation_vehicle_rental), 1, pointer_relation_vehicle_rental);
+	
+}
+
 void logic_delete_vehicle_by_id()
 {
 	FILE *pointer_vehicle = fopen(dir_vehicle, "rb+");
 	FILE *pointer_loan = fopen(dir_loan, "rb+");
-	FILE *pointer_relation_vehicle_rental = fopen(dir_loan, "rb+");
+	FILE *pointer_relation_vehicle_rental = fopen(dir_relation, "rb+");
 	type_vehicle vehicle;
 	int vehicle_pos, loan_pos, relation_pos;
 	char resp, resp2, resp3;
@@ -564,23 +598,29 @@ void logic_delete_vehicle_by_id()
 		{
 			print_vehicle(pointer_vehicle, vehicle.vehicle_plate);
 			printf("Confirme a exclusão deste veículo[S/N]: \n");
-			resp = toupper(getchar());
+			scanf("%c", &resp);
+			getchar();
+			resp = toupper(resp);
 			if(toupper(resp) == 'S')
 			{
 				loan_pos = find_loan_by_vehicle(pointer_loan, vehicle.vehicle_plate);
-				resp2 == 'S';
+				resp2 = 'S';
 				while(loan_pos != -1 && resp2 == 'S')
 				{
 					printf("Existe um empréstimo relacionado a este veículo\n");
 					print_loan(pointer_loan, get_loan_id(pointer_loan, loan_pos));
 					printf("Deseja continuar com a exclusão deste emprestímo[S/N]: \n");
-					resp2 =toupper(getchar());
+					scanf("%c", &resp2);
+					getchar();
+					resp2 = toupper(resp2);
 					if(resp2 == 'S')
 					{
 						aux_logic_delete_loan_by_id(pointer_loan, get_loan_id(pointer_loan, loan_pos));
 						printf("Exclusão do empréstimo realizada com sucesso\n");
+						loan_pos = find_loan_by_vehicle(pointer_loan, vehicle.vehicle_plate);
+						clear_screen();
 					}
-					loan_pos = find_loan_by_vehicle(pointer_loan, vehicle.vehicle_plate);
+					
 				}
 				if(resp2 == 'S')
 				{
@@ -588,19 +628,47 @@ void logic_delete_vehicle_by_id()
 					resp3 = 'S';
 					while(relation_pos != -1 && resp3 == 'S')
 					{
+						printf("Existe uma locadora relacionada a este veículo\n");
+						print_relation(pointer_relation_vehicle_rental, vehicle.vehicle_plate);
+						printf("Deseja continuar com a exclusão desta relação[S/N]: \n");
+						resp3 = toupper(getchar());
+						getchar();
+												
+						if(resp3 == 'S')
+						{
+							aux_logic_delete_relation_by_vehicle(pointer_relation_vehicle_rental, vehicle.vehicle_plate);
+							printf("Exclusão da relação realizada com sucesso\n");
+							relation_pos = find_relation_by_vehicle(pointer_relation_vehicle_rental, vehicle.vehicle_plate);
+							clear_screen();
+						}
+						
 						
 					}
-					
+					if(relation_pos == -1 && loan_pos == -1)
+					{
+						fseek(pointer_vehicle, vehicle_pos, SEEK_SET);
+						fread(&vehicle, sizeof(type_vehicle), 1, pointer_vehicle);
+						vehicle.deleted = 'T';
+						
+						fseek(pointer_vehicle, vehicle_pos, SEEK_SET);
+						fwrite(&vehicle, sizeof(type_vehicle), 1, pointer_vehicle);
+						printf("Veículo excluido com suesso\n");
+					}
 				}
 			}
+		}
+		else
+		{
+			printf("Veículo não encontrado!\n");
 		}
 		clear_screen();
 		printf("Digite a placa do veículo a ser excluído[Digite 0 para sair]: \n");
 		gets(vehicle.vehicle_plate);
 	}
 	
-	
 	fclose(pointer_vehicle);	
+	fclose(pointer_loan);
+	fclose(pointer_relation_vehicle_rental);
 }
 
 
@@ -650,11 +718,25 @@ void create_files()
 int main()
 {
 	create_files();
+	// CORRIGIR RELACIONAMENTO DE VEICULO VARIOS PARA UM LOCADORA
 	setlocale(LC_ALL, "Portuguese");
 	
 	create_rental();
+	clear_screen();
+	
 	create_vehicle();
+	clear_screen();
+	
 	create_relation_vehicle_rental();
+	clear_screen();
+	
+	create_client();
+	clear_screen();
+	
+	create_loan();
+	clear_screen();
+	
+	logic_delete_vehicle_by_id();
 
 	return 0;
 }
